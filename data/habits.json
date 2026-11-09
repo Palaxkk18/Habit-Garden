@@ -1,0 +1,27 @@
+[
+  {
+    "id": "4c4cdbab5544abb0",
+    "name": "read 20 pages",
+    "plantType": "tulip",
+    "createdAt": "2026-11-09",
+    "checkIns": [
+      "2026-11-09"
+    ]
+  },
+  {
+    "id": "843d965d8eb11cf9",
+    "name": "30 minutes Exercise",
+    "plantType": "tulip",
+    "createdAt": "2026-11-09",
+    "checkIns": [
+      "2026-11-09"
+    ]
+  },
+  {
+    "id": "912220c11a50a2db",
+    "name": "study 1 hour",
+    "plantType": "tulip",
+    "createdAt": "2026-11-09",
+    "checkIns": []
+  }
+]

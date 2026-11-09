@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Habit Garden</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #eaf6e4; margin: 0; padding: 20px; color: #2d3b2d; }
+    header { text-align: center; }
+    header h1 { margin: 0 0 4px; }
+    #date { margin: 0 0 16px; color: #557055; }
+    .summary { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 900px; margin: 0 auto 16px; }
+    .pill { background: white; border-radius: 20px; padding: 6px 14px; font-size: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .add { display: flex; flex-wrap: wrap; gap: 8px; max-width: 600px; margin: 0 auto 8px; }
+    .add input { flex: 1 1 200px; padding: 10px; border: 1px solid #9bc59b; border-radius: 8px; font-size: 16px; }
+    .add select { padding: 10px; border: 1px solid #9bc59b; border-radius: 8px; font-size: 16px; background: white; }
+    button { padding: 8px 12px; border: none; border-radius: 8px; background: #4c9a4c; color: white; font-size: 14px; cursor: pointer; }
+    button.secondary { background: #6b8e9b; }
+    button.del { background: #c0524f; }
+    button.undo { background: #b08a3e; }
+    .msg { text-align: center; color: #b03a37; min-height: 22px; margin: 4px 0 12px; }
+    .garden { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; max-width: 1000px; margin: 0 auto; }
+    .card { background: white; border-radius: 12px; padding: 16px; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    .card.wilted { background: #f3ebe0; }
+    .card.thirsty { background: #fff8e1; }
+    .plant { height: 90px; display: flex; align-items: flex-end; justify-content: center; line-height: 1; }
+    .name { font-weight: bold; margin: 8px 0 2px; word-break: break-word; }
+    .meta { color: #557055; font-size: 13px; margin-bottom: 4px; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; margin: 4px 0 8px; background: #d9efd2; }
+    .badge.thirsty { background: #ffe9a8; }
+    .badge.wilted { background: #e6cfb4; }
+    .stats { font-size: 13px; margin-bottom: 10px; }
+    .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+    .empty { text-align: center; color: #557055; grid-column: 1 / -1; }
+    @media (max-width: 480px) { body { padding: 12px; } .garden { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🌱 Habit Garden</h1>
+    <p id="date"></p>
+  </header>
+
+  <section class="summary" id="summary"></section>
+
+  <form class="add" id="addForm">
+    <input id="name" maxlength="60" placeholder="New habit (e.g. Read 20 pages)" required>
+    <select id="plant">
+      <option value="sunflower">Sunflower</option>
+      <option value="rose">Rose</option>
+      <option value="tulip">Tulip</option>
+      <option value="cactus">Cactus</option>
+      <option value="fern">Fern</option>
+    </select>
+    <button type="submit">Plant it</button>
+  </form>
+  <p class="msg" id="msg"></p>
+
+  <main class="garden" id="garden"></main>
+
+  <script>
+    const BLOOM = { sunflower: "🌻", rose: "🌹", tulip: "🌷", cactus: "🌵", fern: "🌴" };
+    const SIZE = { seed: 30, sprout: 42, young: 54, leafy: 66, blooming: 80 };
+
+    function plantEmoji(h) {
+      if (h.health === "wilted") return "🥀";
+      switch (h.stage) {
+        case "seed": return "🌰";
+        case "sprout": return "🌱";
+        case "young": return "🌿";
+        case "leafy": return "🪴";
+        default: return BLOOM[h.plantType] || "🌸";
+      }
+    }
+
+    function el(tag, cls, text) {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+
+    async function api(method, url, body) {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
+      return res.status === 204 ? null : res.json();
+    }
+
+    let msgTimer;
+    function showMsg(text) {
+      const m = document.getElementById("msg");
+      m.textContent = text;
+      clearTimeout(msgTimer);
+      msgTimer = setTimeout(() => { m.textContent = ""; }, 4000);
+    }
+
+    async function act(fn) {
+      try { await fn(); await load(); } catch (e) { showMsg(e.message); }
+    }
+
+    function render(g) {
+      document.getElementById("date").textContent = "Today: " + g.date;
+
+      const s = g.summary;
+      const sum = document.getElementById("summary");
+      sum.innerHTML = "";
+      [
+        s.totalHabits + " habits",
+        s.doneToday + " done today",
+        "🟢 " + s.healthy + " healthy",
+        "💧 " + s.thirsty + " thirsty",
+        "🥀 " + s.wilted + " wilted",
+        "🏆 best streak " + s.bestStreak
+      ].forEach(t => sum.appendChild(el("span", "pill", t)));
+
+      const garden = document.getElementById("garden");
+      garden.innerHTML = "";
+      if (g.habits.length === 0) {
+        garden.appendChild(el("p", "empty", "No habits yet. Plant your first one above!"));
+        return;
+      }
+
+      g.habits.forEach(h => {
+        const card = el("div", "card " + h.health);
+
+        const plant = el("div", "plant", plantEmoji(h));
+        plant.style.fontSize = (h.health === "wilted" ? 40 : SIZE[h.stage]) + "px";
+
+        const badgeText = { healthy: "Healthy", thirsty: "Thirsty - check in today!", wilted: "Wilted - check in to revive" }[h.health];
+
+        const stats = el("div", "stats",
+          "🔥 " + h.currentStreak + " now  |  🏆 " + h.longestStreak + " best  |  ✅ " + h.totalCheckIns + " total");
+
+        const actions = el("div", "actions");
+        const check = el("button", h.doneToday ? "undo" : "", h.doneToday ? "Undo check-in" : "Check in");
+        check.onclick = () => act(() => api(h.doneToday ? "DELETE" : "POST", "/api/habits/" + h.id + "/checkin"));
+
+        const edit = el("button", "secondary", "Edit");
+        edit.onclick = () => {
+          const name = prompt("Habit name:", h.name);
+          if (name === null) return;
+          const plantType = prompt("Plant type (sunflower, rose, tulip, cactus, fern):", h.plantType);
+          if (plantType === null) return;
+          act(() => api("PUT", "/api/habits/" + h.id, { name, plantType }));
+        };
+
+        const del = el("button", "del", "Delete");
+        del.onclick = () => {
+          if (confirm('Delete "' + h.name + '"?')) act(() => api("DELETE", "/api/habits/" + h.id));
+        };
+
+        actions.append(check, edit, del);
+        card.append(
+          plant,
+          el("div", "name", h.name),
+          el("div", "meta", h.plantType + " · " + h.stage),
+          el("span", "badge " + h.health, badgeText),
+          stats,
+          actions
+        );
+        garden.appendChild(card);
+      });
+    }
+
+    async function load() {
+      try { render(await api("GET", "/api/garden")); } catch (e) { showMsg(e.message); }
+    }
+
+    document.getElementById("addForm").addEventListener("submit", e => {
+      e.preventDefault();
+      const input = document.getElementById("name");
+      const plantType = document.getElementById("plant").value;
+      act(async () => {
+        await api("POST", "/api/habits", { name: input.value, plantType });
+        input.value = "";
+      });
+    });
+
+    load();
+    setInterval(load, 60000); // refresh every minute so plants update overnight
+  </script>
+</body>
+</html>
